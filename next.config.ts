@@ -5,8 +5,6 @@ const API_URL = raw.startsWith("http://") || raw.startsWith("https://")
   ? raw
   : `https://${raw}`;
 
-console.log("[next.config] API_URL:", API_URL);
-
 const nextConfig: NextConfig = {
   async rewrites() {
     return [
