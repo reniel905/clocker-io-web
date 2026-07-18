@@ -6,6 +6,10 @@ export function updateUser(
   data: Partial<{
     email: string;
     name: { firstName: string; middleName?: string; lastName: string };
+    targetHours: number;
+    targetDate: string;
+    allowOverTime: boolean;
+    allowWeekEnds: boolean;
   }>,
 ) {
   return api.put<User>(`/api/users/${userId}`, data);

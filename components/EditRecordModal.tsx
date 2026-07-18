@@ -52,6 +52,7 @@ export default function EditRecordModal({ record, onClose, onSaved }: Props) {
         startTime: start.toISOString(),
         endTime: end.toISOString(),
         editReason: reason.trim(),
+        recordType: "custom",
       });
       onSaved();
     } catch (err: unknown) {

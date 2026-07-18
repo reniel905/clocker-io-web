@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useCallback, Fragment } from "react";
+import { useState, useEffect, useCallback, useMemo } from "react";
 import { useRouter } from "next/navigation";
 import { useAuth } from "@/contexts/AuthContext";
 import * as recordsApi from "@/lib/records-api";
@@ -9,8 +9,10 @@ import { format, parseISO, differenceInSeconds } from "date-fns";
 import Button from "@/components/ui/Button";
 import Card from "@/components/ui/Card";
 import Chip from "@/components/ui/Chip";
+import TextField from "@/components/ui/TextField";
 import EditRecordModal from "@/components/EditRecordModal";
 import CreateRecordModal from "@/components/CreateRecordModal";
+import BatchCreateModal from "@/components/BatchCreateModal";
 import ConfirmDialog from "@/components/ConfirmDialog";
 
 function formatDuration(start: string, end?: string) {
@@ -23,16 +25,18 @@ function formatDuration(start: string, end?: string) {
   return `${String(h).padStart(2, "0")}:${String(m).padStart(2, "0")}:${String(sLeft).padStart(2, "0")}`;
 }
 
+const PAGE_SIZE = 10;
+
 export default function RecordsPage() {
   const { user } = useAuth();
   const router = useRouter();
-  const [records, setRecords] = useState<TimeRecord[]>([]);
+  const [allRecords, setAllRecords] = useState<TimeRecord[]>([]);
   const [loading, setLoading] = useState(true);
   const [page, setPage] = useState(1);
-  const [totalPages, setTotalPages] = useState(1);
-  const [expandedId, setExpandedId] = useState<string | null>(null);
+  const [searchQuery, setSearchQuery] = useState("");
   const [editingRecord, setEditingRecord] = useState<TimeRecord | null>(null);
   const [showCreate, setShowCreate] = useState(false);
+  const [showBatch, setShowBatch] = useState(false);
   const [deletingId, setDeletingId] = useState<string | null>(null);
   const [deleting, setDeleting] = useState(false);
   const [menuRowId, setMenuRowId] = useState<string | null>(null);
@@ -40,14 +44,16 @@ export default function RecordsPage() {
   const fetchRecords = useCallback(async () => {
     if (!user) return;
     try {
-      const res = await recordsApi.getRecordsByUser(user._id, page, 20);
-      setRecords(res.data);
-      setTotalPages(res.meta.totalPages);
+      const res = await recordsApi.getRecordsByUser(user._id, 1, 500);
+      const sorted = res.data.slice().sort(
+        (a, b) => parseISO(b.startTime).getTime() - parseISO(a.startTime).getTime(),
+      );
+      setAllRecords(sorted);
     } catch {
     } finally {
       setLoading(false);
     }
-  }, [user, page]);
+  }, [user]);
 
   useEffect(() => {
     if (!user) {
@@ -57,6 +63,26 @@ export default function RecordsPage() {
     // eslint-disable-next-line react-hooks/set-state-in-effect
     fetchRecords();
   }, [fetchRecords, user]);
+
+  const filtered = useMemo(() => {
+    if (!searchQuery.trim()) return allRecords;
+    const q = searchQuery.toLowerCase();
+    return allRecords.filter(
+      (r) =>
+        format(parseISO(r.startTime), "MMM d, yyyy").toLowerCase().includes(q) ||
+        format(parseISO(r.startTime), "hh:mm a").toLowerCase().includes(q) ||
+        (r.endTime && format(parseISO(r.endTime), "hh:mm a").toLowerCase().includes(q)) ||
+        formatDuration(r.startTime, r.endTime).includes(q) ||
+        (r.recordType === "custom" ? "manual" : "auto").includes(q) ||
+        (r.isActive ? "active" : "completed").includes(q),
+    );
+  }, [allRecords, searchQuery]);
+
+  const totalPages = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE));
+  const records = useMemo(
+    () => filtered.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE),
+    [filtered, page],
+  );
 
   async function handleDelete() {
     if (!deletingId) return;
@@ -84,11 +110,26 @@ export default function RecordsPage() {
           <Button variant="tonal" onClick={() => router.push("/dtr")} className="w-full sm:w-auto">
             DTR
           </Button>
+          <Button variant="outlined" onClick={() => setShowBatch(true)} className="w-full sm:w-auto">
+            Batch
+          </Button>
           <Button variant="filled" onClick={() => setShowCreate(true)} className="w-full sm:w-auto">
             + New
           </Button>
         </div>
       </div>
+
+      <TextField
+        variant="outlined"
+        label="Search"
+        placeholder="Search records…"
+        value={searchQuery}
+        onChange={(e) => {
+          setSearchQuery(e.target.value);
+          setPage(1);
+        }}
+        className="w-full"
+      />
 
       {loading ? (
         <div className="flex items-center justify-center h-64">
@@ -120,126 +161,90 @@ export default function RecordsPage() {
               </thead>
               <tbody className="divide-y divide-outline-variant/40">
                 {records.map((record) => (
-                  <Fragment key={record._id}>
-                    <tr className="transition-colors hover:bg-surface-container-low">
-                      <td className="whitespace-nowrap px-4 py-3 m3-body-medium text-on-surface">
-                        {format(parseISO(record.startTime), "MMM d, yyyy")}
-                      </td>
-                      <td className="whitespace-nowrap px-4 py-3 m3-body-medium text-on-surface-variant">
-                        {format(parseISO(record.startTime), "hh:mm a")}
-                      </td>
-                      <td className="whitespace-nowrap px-4 py-3 m3-body-medium text-on-surface-variant">
-                        {record.endTime
-                          ? format(parseISO(record.endTime), "hh:mm a")
-                          : "—"}
-                      </td>
-                      <td className="whitespace-nowrap px-4 py-3 m3-body-medium font-mono text-on-surface">
-                        {formatDuration(record.startTime, record.endTime)}
-                      </td>
-                      <td className="whitespace-nowrap px-4 py-3">
-                        <Chip
-                          variant="suggestion"
-                          className={
-                            record.recordType === "custom"
-                              ? "!bg-tertiary-container !text-on-tertiary-container"
-                              : ""
-                          }
-                        >
-                          {record.recordType === "custom" ? "Manual" : "Auto"}
-                        </Chip>
-                      </td>
-                      <td className="whitespace-nowrap px-4 py-3">
-                        <div className="flex items-center gap-1.5">
-                          <Chip
-                            variant="suggestion"
-                            className={
-                              record.isActive
-                                ? "!bg-primary-container !text-on-primary-container"
-                                : ""
-                            }
-                          >
-                            {record.isActive ? "Active" : "Completed"}
-                          </Chip>
-                          {record.editReason && (
-                            <Chip
-                              variant="filter"
-                              selected={expandedId === record._id}
-                              onClick={() =>
-                                setExpandedId(
-                                  expandedId === record._id ? null : record._id,
-                                )
-                              }
+                  <tr
+                    key={record._id}
+                    onClick={() => router.push(`/records/${record._id}`)}
+                    className="transition-colors hover:bg-surface-container-low cursor-pointer"
+                  >
+                    <td className="whitespace-nowrap px-4 py-3 m3-body-medium text-on-surface">
+                      {format(parseISO(record.startTime), "MMM d, yyyy")}
+                    </td>
+                    <td className="whitespace-nowrap px-4 py-3 m3-body-medium text-on-surface-variant">
+                      {format(parseISO(record.startTime), "hh:mm a")}
+                    </td>
+                    <td className="whitespace-nowrap px-4 py-3 m3-body-medium text-on-surface-variant">
+                      {record.endTime
+                        ? format(parseISO(record.endTime), "hh:mm a")
+                        : "—"}
+                    </td>
+                    <td className="whitespace-nowrap px-4 py-3 m3-body-medium font-mono text-on-surface">
+                      {formatDuration(record.startTime, record.endTime)}
+                    </td>
+                    <td className="whitespace-nowrap px-4 py-3">
+                      <Chip
+                        variant="suggestion"
+                        className={
+                          record.recordType === "custom"
+                            ? "!bg-tertiary-container !text-on-tertiary-container"
+                            : ""
+                        }
+                      >
+                        {record.recordType === "custom" ? "Manual" : "Auto"}
+                      </Chip>
+                    </td>
+                    <td className="whitespace-nowrap px-4 py-3">
+                      <Chip
+                        variant="suggestion"
+                        className={
+                          record.isActive
+                            ? "!bg-primary-container !text-on-primary-container"
+                            : ""
+                        }
+                      >
+                        {record.isActive ? "Active" : "Completed"}
+                      </Chip>
+                    </td>
+                    <td className="whitespace-nowrap px-4 py-3 text-right">
+                      <div className="flex items-center justify-end gap-1">
+                        {!record.isActive && (
+                          <>
+                            <Button
+                              variant="tonal"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                setEditingRecord(record);
+                              }}
+                              className="!h-8 !px-3 !m3-shape-sm text-xs"
                             >
-                              Edited
-                            </Chip>
-                          )}
-                        </div>
-                      </td>
-                      <td className="whitespace-nowrap px-4 py-3 text-right">
-                        <div className="flex items-center justify-end gap-1">
-                          {!record.isActive && (
-                            <>
-                              <Button
-                                variant="tonal"
-                                onClick={() => setEditingRecord(record)}
-                                className="!h-8 !px-3 !m3-shape-sm text-xs"
+                              Edit
+                            </Button>
+                            <button
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                setDeletingId(record._id);
+                              }}
+                              className="flex h-8 w-8 items-center justify-center m3-shape-sm text-on-surface-variant hover:bg-error-container hover:text-on-error-container transition-colors"
+                              title="Delete"
+                            >
+                              <svg
+                                className="h-4 w-4"
+                                fill="none"
+                                viewBox="0 0 24 24"
+                                stroke="currentColor"
+                                strokeWidth={2}
                               >
-                                Edit
-                              </Button>
-                              <button
-                                onClick={() => setDeletingId(record._id)}
-                                className="flex h-8 w-8 items-center justify-center m3-shape-sm text-on-surface-variant hover:bg-error-container hover:text-on-error-container transition-colors"
-                                title="Delete"
-                              >
-                                <svg
-                                  className="h-4 w-4"
-                                  fill="none"
-                                  viewBox="0 0 24 24"
-                                  stroke="currentColor"
-                                  strokeWidth={2}
-                                >
-                                  <path
-                                    strokeLinecap="round"
-                                    strokeLinejoin="round"
-                                    d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"
-                                  />
-                                </svg>
-                              </button>
-                            </>
-                          )}
-                        </div>
-                      </td>
-                    </tr>
-                    {expandedId === record._id && record.editReason && (
-                      <tr className="bg-secondary-container/10">
-                        <td colSpan={7} className="px-4 py-4">
-                          <div className="flex items-start gap-6">
-                            <div className="flex-1">
-                              <p className="m3-label-small text-on-surface-variant uppercase mb-1">
-                                Reason
-                              </p>
-                              <p className="m3-body-medium text-on-surface">
-                                {record.editReason}
-                              </p>
-                            </div>
-                            <div className="text-right shrink-0">
-                              <p className="m3-label-small text-on-surface-variant uppercase mb-1">
-                                Edited on
-                              </p>
-                              <p className="m3-body-medium text-on-surface">
-                                {record.updatedAt
-                                  ? format(
-                                      parseISO(record.updatedAt),
-                                      "MMM d, yyyy h:mm a",
-                                    )
-                                  : "—"}
-                              </p>
-                            </div>
-                          </div>
-                        </td>
-                      </tr>
-                    )}
-                  </Fragment>
+                                <path
+                                  strokeLinecap="round"
+                                  strokeLinejoin="round"
+                                  d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"
+                                />
+                              </svg>
+                            </button>
+                          </>
+                        )}
+                      </div>
+                    </td>
+                  </tr>
                 ))}
               </tbody>
             </table>
@@ -249,7 +254,12 @@ export default function RecordsPage() {
           {/* ───── Mobile card list ───── */}
           <div className="block md:hidden space-y-3">
             {records.map((record) => (
-              <Card key={record._id} variant="elevated" className="space-y-3">
+              <Card
+                key={record._id}
+                variant="elevated"
+                className="space-y-3 cursor-pointer"
+                onClick={() => router.push(`/records/${record._id}`)}
+              >
                 <div className="flex items-start justify-between gap-3">
                   <div className="min-w-0 flex-1">
                     <p className="m3-body-medium text-on-surface font-medium">
@@ -266,11 +276,12 @@ export default function RecordsPage() {
                   {!record.isActive && (
                     <div className="relative shrink-0">
                       <button
-                        onClick={() =>
+                        onClick={(e) => {
+                          e.stopPropagation();
                           setMenuRowId(
                             menuRowId === record._id ? null : record._id,
-                          )
-                        }
+                          );
+                        }}
                         className="flex h-9 w-9 items-center justify-center m3-shape-full text-on-surface-variant hover:bg-surface-container-high transition-colors"
                         aria-label="More options"
                       >
@@ -370,11 +381,6 @@ export default function RecordsPage() {
                   >
                     {record.isActive ? "Active" : "Completed"}
                   </Chip>
-                  {record.editReason && (
-                    <Chip variant="filter" selected>
-                      Edited
-                    </Chip>
-                  )}
                 </div>
               </Card>
             ))}
@@ -424,6 +430,17 @@ export default function RecordsPage() {
           onClose={() => setShowCreate(false)}
           onSaved={() => {
             setShowCreate(false);
+            fetchRecords();
+          }}
+        />
+      )}
+
+      {showBatch && user && (
+        <BatchCreateModal
+          userId={user._id}
+          onClose={() => setShowBatch(false)}
+          onSaved={() => {
+            setShowBatch(false);
             fetchRecords();
           }}
         />

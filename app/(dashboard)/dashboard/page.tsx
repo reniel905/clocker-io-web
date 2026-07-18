@@ -3,11 +3,15 @@
 import { useState, useEffect, useCallback } from "react";
 import { useAuth } from "@/contexts/AuthContext";
 import * as recordsApi from "@/lib/records-api";
+import { parseISO } from "date-fns";
 import type { TimeRecord } from "@/types";
 import ClockButton from "@/components/ClockButton";
 import ElapsedTimer from "@/components/ElapsedTimer";
 import DashboardStats from "@/components/DashboardStats";
+import HoursChart from "@/components/HoursChart";
+import CompletionEstimate from "@/components/CompletionEstimate";
 import Card from "@/components/ui/Card";
+import TargetHoursPrompt from "@/components/TargetHoursPrompt";
 
 export default function DashboardPage() {
   const { user } = useAuth();
@@ -15,13 +19,15 @@ export default function DashboardPage() {
   const [activeRecord, setActiveRecord] = useState<TimeRecord | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
+  const [recordsLoaded, setRecordsLoaded] = useState(false);
 
   const fetchRecords = useCallback(async () => {
     if (!user) return;
     try {
-      const res = await recordsApi.getRecordsByUser(user._id, 1, 100);
+      const res = await recordsApi.getRecordsByUser(user._id, 1, 500);
       setRecords(res.data);
       setActiveRecord(res.data.find((r) => r.isActive) || null);
+      setRecordsLoaded(true);
     } catch {
       setError("Failed to load records");
     } finally {
@@ -37,6 +43,14 @@ export default function DashboardPage() {
     // eslint-disable-next-line react-hooks/set-state-in-effect
     fetchRecords();
   }, [fetchRecords, user]);
+
+  const totalCompletedMs = records.reduce((acc, r) => {
+    if (r.endTime)
+      return acc + (parseISO(r.endTime).getTime() - parseISO(r.startTime).getTime());
+    return acc;
+  }, 0);
+
+  const totalHours = totalCompletedMs / 3600000;
 
   async function handleClockIn() {
     if (!user) return;
@@ -70,6 +84,8 @@ export default function DashboardPage() {
 
   return (
     <div className="space-y-6">
+      <TargetHoursPrompt />
+
       <div>
         <h1 className="m3-headline-medium text-on-surface">Dashboard</h1>
         <p className="m3-body-small text-on-surface-variant">
@@ -83,9 +99,27 @@ export default function DashboardPage() {
         </p>
       )}
 
-      <DashboardStats records={records} />
+      <DashboardStats
+        records={records}
+        targetHours={user?.targetHours}
+        totalHours={totalHours}
+      />
 
-      <Card variant="elevated" className="flex flex-col items-center gap-6 !py-8">
+      <HoursChart
+        records={records}
+        targetHours={user?.targetHours}
+      />
+
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+        <CompletionEstimate
+          records={records}
+          targetHours={user?.targetHours}
+          targetDate={user?.targetDate}
+          allowOverTime={user?.allowOverTime}
+          allowWeekEnds={user?.allowWeekEnds}
+        />
+
+        <Card variant="elevated" className="flex flex-col items-center gap-6 !py-8">
         {activeRecord ? (
           <>
             <p className="m3-body-medium text-on-surface-variant">
@@ -106,6 +140,7 @@ export default function DashboardPage() {
           onClockOut={handleClockOut}
         />
       </Card>
+      </div>
     </div>
   );
 }

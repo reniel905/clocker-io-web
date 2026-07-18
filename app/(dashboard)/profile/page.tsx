@@ -29,6 +29,19 @@ export default function ProfilePage() {
   const [cpError, setCpError] = useState("");
   const [cpSuccess, setCpSuccess] = useState("");
 
+  const [targetHours, setTargetHours] = useState("");
+  const [thSaving, setThSaving] = useState(false);
+  const [thError, setThError] = useState("");
+  const [thSuccess, setThSuccess] = useState("");
+
+  const [targetDate, setTargetDate] = useState("");
+  const [tdSaving, setTdSaving] = useState(false);
+  const [tdError, setTdError] = useState("");
+  const [tdSuccess, setTdSuccess] = useState("");
+
+  const [aoSaving, setAoSaving] = useState(false);
+  const [awSaving, setAwSaving] = useState(false);
+
   function startEditing() {
     if (!user) return;
     setFirstName(user.name.firstName);
@@ -95,6 +108,67 @@ export default function ProfilePage() {
   if (!user) return null;
 
   const initials = `${user.name.firstName[0]}${user.name.lastName[0]}`.toUpperCase();
+
+  async function handleTargetHoursSave() {
+    if (!user) return;
+    const val = parseInt(targetHours, 10);
+    if (isNaN(val) || val <= 0) {
+      setThError("Enter a valid positive number");
+      return;
+    }
+    setThError("");
+    setThSuccess("");
+    setThSaving(true);
+    try {
+      await usersApi.updateUser(user._id, { targetHours: val });
+      setThSuccess("Target hours updated");
+      if (refreshUser) await refreshUser();
+    } catch (err: unknown) {
+      setThError(err instanceof Error ? err.message : "Failed to save");
+    } finally {
+      setThSaving(false);
+    }
+  }
+
+  async function handleTargetDateSave() {
+    if (!user) return;
+    setTdError("");
+    setTdSuccess("");
+    setTdSaving(true);
+    try {
+      await usersApi.updateUser(user._id, { targetDate: targetDate || undefined });
+      setTdSuccess("Target date updated");
+      if (refreshUser) await refreshUser();
+    } catch (err: unknown) {
+      setTdError(err instanceof Error ? err.message : "Failed to save");
+    } finally {
+      setTdSaving(false);
+    }
+  }
+
+  async function handleAllowOverTimeToggle(val: boolean) {
+    if (!user) return;
+    setAoSaving(true);
+    try {
+      await usersApi.updateUser(user._id, { allowOverTime: val });
+      if (refreshUser) await refreshUser();
+    } catch {
+    } finally {
+      setAoSaving(false);
+    }
+  }
+
+  async function handleAllowWeekEndsToggle(val: boolean) {
+    if (!user) return;
+    setAwSaving(true);
+    try {
+      await usersApi.updateUser(user._id, { allowWeekEnds: val });
+      if (refreshUser) await refreshUser();
+    } catch {
+    } finally {
+      setAwSaving(false);
+    }
+  }
 
   return (
     <div className="space-y-6 max-w-2xl">
@@ -238,6 +312,108 @@ export default function ProfilePage() {
           label="Dark Mode"
           description="Toggle between light and dark theme"
         />
+
+        <hr className="my-5 border-outline-variant/40" />
+
+        <div className="space-y-3">
+          <p className="m3-label-small text-on-surface-variant uppercase">Target Internship Hours</p>
+          <div className="flex items-end gap-3">
+            <div className="flex-1">
+              <TextField
+                label="Target Hours"
+                type="number"
+                min={1}
+                value={targetHours}
+                onChange={(e) => {
+                  setTargetHours(e.target.value);
+                  setThError("");
+                  setThSuccess("");
+                }}
+                onFocus={() => {
+                  if (!targetHours && user?.targetHours) {
+                    setTargetHours(String(user.targetHours));
+                  }
+                }}
+              />
+            </div>
+            <Button
+              variant="filled"
+              disabled={thSaving}
+              onClick={handleTargetHoursSave}
+              className="!h-10 shrink-0"
+            >
+              {thSaving ? "Saving..." : "Save"}
+            </Button>
+          </div>
+          {thError && (
+            <p className="text-xs text-error">{thError}</p>
+          )}
+          {thSuccess && (
+            <p className="text-xs text-tertiary">{thSuccess}</p>
+          )}
+          {user?.targetHours && (
+            <p className="m3-body-small text-on-surface-variant">
+              Current target: <strong>{user.targetHours}</strong> hours
+            </p>
+          )}
+        </div>
+
+        <hr className="my-5 border-outline-variant/40" />
+
+        <div className="space-y-3">
+          <p className="m3-label-small text-on-surface-variant uppercase">Target Completion Date</p>
+          <div className="flex items-end gap-3">
+            <div className="flex-1">
+              <TextField
+                label="Target Date"
+                type="date"
+                value={targetDate}
+                onChange={(e) => {
+                  setTargetDate(e.target.value);
+                  setTdError("");
+                  setTdSuccess("");
+                }}
+                onFocus={() => {
+                  if (!targetDate && user?.targetDate) {
+                    setTargetDate(user.targetDate.split("T")[0]);
+                  }
+                }}
+              />
+            </div>
+            <Button
+              variant="filled"
+              disabled={tdSaving}
+              onClick={handleTargetDateSave}
+              className="!h-10 shrink-0"
+            >
+              {tdSaving ? "Saving..." : "Save"}
+            </Button>
+          </div>
+          {tdError && <p className="text-xs text-error">{tdError}</p>}
+          {tdSuccess && <p className="text-xs text-tertiary">{tdSuccess}</p>}
+          {user?.targetDate && (
+            <p className="m3-body-small text-on-surface-variant">
+              Current target date: <strong>{new Date(user.targetDate).toLocaleDateString()}</strong>
+            </p>
+          )}
+        </div>
+
+        <hr className="my-5 border-outline-variant/40" />
+
+        <div className="space-y-4">
+          <Switch
+            checked={!!user?.allowOverTime}
+            onChange={() => handleAllowOverTimeToggle(!user?.allowOverTime)}
+            label="Allow Overtime"
+            description="Include hours beyond 8h/day when calculating your average pace"
+          />
+          <Switch
+            checked={!!user?.allowWeekEnds}
+            onChange={() => handleAllowWeekEndsToggle(!user?.allowWeekEnds)}
+            label="Allow Weekends"
+            description="Include Saturdays as working days in the completion estimate"
+          />
+        </div>
       </Card>
     </div>
   );

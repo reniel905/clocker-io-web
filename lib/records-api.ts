@@ -9,8 +9,12 @@ export function getRecords(page = 1, limit = 50) {
 
 export function getRecordsByUser(userId: string, page = 1, limit = 50) {
   return api.get<PaginatedResponse<TimeRecord>>(
-    `/api/records/${userId}?page=${page}&limit=${limit}`,
+    `/api/records/get-by-user/${userId}?page=${page}&limit=${limit}`,
   );
+}
+
+export function getRecord(recordId: string) {
+  return api.get<{ record: TimeRecord }>(`/api/records/${recordId}`);
 }
 
 export function clockIn(userId: string) {
@@ -23,7 +27,7 @@ export function clockOut(recordId: string) {
 
 export function updateRecord(
   recordId: string,
-  data: { startTime: string; endTime: string; editReason: string },
+  data: { startTime: string; endTime: string; editReason: string; recordType?: string },
 ) {
   return api.put<{ message: string }>(`/api/records/${recordId}/update`, data);
 }
@@ -40,4 +44,14 @@ export function createRecord(
 
 export function deleteRecord(recordId: string) {
   return api.del<{ message: string }>(`/api/records/${recordId}/delete`);
+}
+
+export function createBatchRecords(
+  userId: string,
+  records: { userId: string; startTime: string; endTime: string; recordType: string }[],
+) {
+  return api.post<{ message: string; data: TimeRecord[] }>(
+    `/api/records/${userId}/batch-custom`,
+    { records },
+  );
 }

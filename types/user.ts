@@ -10,6 +10,9 @@ export type User = {
   authProvider?: "local" | "google";
   isVerified?: boolean;
   targetHours?: number;
+  targetDate?: string;
+  allowOverTime?: boolean;
+  allowWeekEnds?: boolean;
   createdAt?: string;
   updatedAt?: string;
 };
